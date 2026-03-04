@@ -27,7 +27,7 @@ def encontrar_puerto_arduino():
         if ("arduino" in desc) or ("usb serial" in desc) or ("ch340" in desc) or ("1a86" in hwid) or ("2341" in hwid):
             return p.device
 
-    if platform.system() == "Windows": return "COM6"
+    if platform.system() == "Windows": return "COM3"
     elif platform.system() == "Linux": return "/dev/ttyACM0"
     elif platform.system() == "Darwin": return "/dev/tty.usbmodem1101"
     else: return None
