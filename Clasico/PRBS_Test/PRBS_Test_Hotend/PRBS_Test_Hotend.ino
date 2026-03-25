@@ -1,19 +1,17 @@
 #include "PIN_MAP.h"
 #include "HOTEND.h"
 
-// ── Temporización ──────────────────────────────────────
-// NOTA: prevTime está declarado en HOTEND.h — NO redeclarar aquí
+// ── Step Response: PWM constante por 15 min ───────────
+const int STEP_PWM = 100;
+
+// ── Temporización ─────────────────────────────────────
 unsigned long prevTime_sample = 0;
-unsigned long lastChange      = 0;
 unsigned long startTime       = 0;
 
-const unsigned long SAMPLE_DT  = 100;   // ms
-const unsigned long DWELL_TIME = 5000;  // ms entre cambios (hotend lento, τ ≈ 10-30s)
+const unsigned long SAMPLE_DT   = 100;      // 100ms
+const unsigned long DURACION_MS = 900000UL; // 15 min
 
-// ── PRBS ───────────────────────────────────────────────
-const int pwmLevels[] = {0, 60, 100, 140, 180, 220};
-const int N_LEVELS    = 6;
-int currentPwm        = 60;
+bool finished = false;
 
 // ══════════════════════════════════════════════════════
 void setup() {
@@ -21,52 +19,44 @@ void setup() {
 
   pinMode(pinHotend, OUTPUT);
   analogWrite(pinHotend, 0);
+  delay(2000);
 
   Serial.println("t_ms,pwm_heater,temp_C");
 
+  analogWrite(pinHotend, STEP_PWM);
   startTime       = millis();
   prevTime_sample = millis();
-  lastChange      = millis();
-
-  analogWrite(pinHotend, currentPwm);
 }
 
 // ══════════════════════════════════════════════════════
 void loop() {
-  unsigned long now = millis();
+  if (finished) return;
 
-  // ── Leer temperatura ────────────────────────────────
+  unsigned long now = millis();
   float temp = thermistor(analogRead(termPin));
 
-  // ── Seguridad (CRÍTICO — va antes de todo) ───────────
-  if (temp > 255.0 || temp == -999) {
+  // ── Seguridad ───────────────────────────────────────
+  if (temp > 250.0 || temp == -999) {
     analogWrite(pinHotend, 0);
     Serial.println("SHUTDOWN_SEGURIDAD");
     while (1);
   }
 
-  // ── Cambio de nivel PRBS ────────────────────────────
-  if (now - lastChange >= DWELL_TIME) {
-    lastChange = now;
-    int idx;
-    do {
-      idx = random(N_LEVELS);
-    } while (pwmLevels[idx] == currentPwm);
-
-    currentPwm = pwmLevels[idx];
-    analogWrite(pinHotend, currentPwm);
-  }
-
-  // ── Muestreo cada 100 ms ────────────────────────────
+  // ── Muestreo cada 100 ms ───────────────────────────
   if (now - prevTime_sample >= SAMPLE_DT) {
-    unsigned long t = now - startTime;
+    prevTime_sample = now;
 
-    Serial.print(t);
+    Serial.print(now - startTime);
     Serial.print(',');
-    Serial.print(currentPwm);
+    Serial.print(STEP_PWM);
     Serial.print(',');
     Serial.println(temp, 2);
+  }
 
-    prevTime_sample = now;
+  // ── Apaga al terminar 15 min ───────────────────────
+  if (now - startTime >= DURACION_MS) {
+    analogWrite(pinHotend, 0);
+    Serial.println("# Experimento completo");
+    finished = true;
   }
 }
