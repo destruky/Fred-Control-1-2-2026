@@ -2,7 +2,7 @@
 #include "HOTEND.h"
 
 // ── Step Response: PWM constante por 15 min ───────────
-const int STEP_PWM = 180;
+const int STEP_PWM = 220;
 
 // ── Temporización ─────────────────────────────────────
 unsigned long prevTime_sample = 0;
