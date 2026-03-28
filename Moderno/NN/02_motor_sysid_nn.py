@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+import scipy.io
 
 # ==============================================================
 # CONFIG
@@ -213,7 +214,9 @@ if __name__ == '__main__':
     # Espacio de estados
     print("\n[5/5] Extrayendo espacio de estados...")
     A, B, C, D = extract_state_space(model, pwm_op=90.0, rpm_op=35.0)
-    np.savez('state_space_motor.npz', A=A, B=B, C=C, D=D, Ts=Ts)
+    
+    # --- AQUI ESTA EL CAMBIO PARA CREAR EL .MAT ---
+    scipy.io.savemat('state_space_motor.mat', {'A': A, 'B': B, 'C': C, 'D': D, 'Ts': Ts})
 
     print(f"\n  Matriz A:\n{np.array2string(A, precision=4)}")
     print(f"\n  Matriz B:\n{np.array2string(B, precision=4)}")
@@ -224,7 +227,16 @@ if __name__ == '__main__':
 
     print(f"\n  Archivos guardados:")
     print(f"    motor_identifier.pth  — pesos de la red")
-    print(f"    state_space_motor.npz — matrices A, B, C, D")
+    print(f"    state_space_motor.mat — matrices A, B, C, D") # Cambié el nombre aquí
+
+    # ... (El código de las gráficas déjalo exactamente igual) ...
+
+    # --- CAMBIE LAS INSTRUCCIONES FINALES PARA MATLAB ---
+    print("\n✅ LISTO.")
+    print("Siguiente paso: arrastra el archivo state_space_motor.mat a MATLAB o corre esto:")
+    print("  >> load('state_space_motor.mat');")
+    print("  >> sys_d = ss(A, B, C, D, Ts);")
+    print("  >> step(sys_d)")
 
     # Graficar
     t_s = (test_df['t_ms'].values - test_df['t_ms'].values[0]) / 1000.0
@@ -251,10 +263,4 @@ if __name__ == '__main__':
     plt.savefig('motor_nn_results.png', dpi=150)
     plt.show()
 
-    print("\n✅ LISTO.")
-    print("Siguiente paso: cargar state_space_motor.npz en MATLAB")
-    print("  >> data = load('state_space_motor.npz');")
-    print("  >> sys_d = ss(A, B, C, D, 0.1);")
-    print("  >> step(sys_d)")
-
-    #oli
+    
