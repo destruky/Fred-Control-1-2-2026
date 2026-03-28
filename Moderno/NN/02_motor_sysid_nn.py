@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import scipy.io
+from pathlib import Path
 
 # ==============================================================
 # CONFIG
@@ -24,9 +25,10 @@ LR        = 1e-3
 BATCH     = 256
 Ts        = 0.1
 
-FILE_TRAIN = "PRBS_Motor1.csv"
-FILE_VAL   = "PRBS_Motor2.csv"
-FILE_TEST  = "PRBS_Motor3.csv"
+BASE       = Path(__file__).parent
+FILE_TRAIN = BASE / "PRBS_Motor1.csv"
+FILE_VAL   = BASE / "PRBS_Motor2.csv"
+FILE_TEST  = BASE / "PRBS_Motor3.csv"
 
 # ==============================================================
 # PASO 1: CARGAR Y LIMPIAR
@@ -102,12 +104,12 @@ def train_model(model, train_dl, val_dl, epochs=EPOCHS, lr=LR):
 
         if v_loss < best_val:
             best_val = v_loss
-            torch.save(model.state_dict(), 'motor_identifier.pth')
+            torch.save(model.state_dict(), BASE / 'motor_identifier.pth')
 
         if (epoch + 1) % 25 == 0 or epoch == 0:
             print(f"  Epoch {epoch+1:3d}/{epochs}: train={t_loss:.6f}  val={v_loss:.6f}")
 
-    model.load_state_dict(torch.load('motor_identifier.pth'))
+    model.load_state_dict(torch.load(BASE / 'motor_identifier.pth'))
     return history
 
 # ==============================================================
@@ -129,40 +131,61 @@ def simulate_multistep(model, df, window=WINDOW):
 # ==============================================================
 # PASO 5: EXTRAER ESPACIO DE ESTADOS (JACOBIANO)
 # ==============================================================
-def extract_state_space(model, pwm_op, rpm_op, window=WINDOW):
-    pwm_n = pwm_op / PWM_MAX
-    rpm_n = rpm_op / RPM_MAX
+def extract_state_space(model, window=WINDOW):
+    candidates = [
+        (75.0, 28.0),
+        (60.0, 22.0),
+        (90.0, 30.0),
+        (90.0, 35.0),
+        (80.0, 25.0),
+        (100.0, 38.0),
+    ]
 
-    pwm_vec = torch.full((window + 1,), pwm_n, dtype=torch.float32)
-    rpm_vec = torch.full((window + 1,), rpm_n, dtype=torch.float32, requires_grad=True)
+    all_eigs = []
+    for pwm_op, rpm_op in candidates:
+        pwm_n = pwm_op / PWM_MAX
+        rpm_n = rpm_op / RPM_MAX
 
-    feat = torch.cat([pwm_vec, rpm_vec]).unsqueeze(0)
+        pwm_vec = torch.full((window + 1,), pwm_n, dtype=torch.float32)
+        rpm_vec = torch.full((window + 1,), rpm_n, dtype=torch.float32)
 
-    feat_var = feat.clone().detach().requires_grad_(True)
-    out = model(feat_var)
-    out.backward()
-    grad = feat_var.grad.squeeze().numpy()
+        feat = torch.cat([pwm_vec, rpm_vec]).unsqueeze(0)
+        feat_var = feat.clone().detach().requires_grad_(True)
+        out = model(feat_var)
+        out.backward()
+        grad = feat_var.grad.squeeze().numpy()
 
-    dfdpwm = grad[:window + 1]
-    dfdrpm = grad[window + 1:]
+        dfdpwm = grad[:window + 1]
+        dfdrpm = grad[window + 1:]
 
-    n_states = window + 1
-    A = np.zeros((n_states, n_states))
-    A[0, :] = dfdrpm[::-1]
-    for i in range(1, n_states):
-        A[i, i - 1] = 1.0
+        n_states = window + 1
+        A = np.zeros((n_states, n_states))
+        A[0, :] = dfdrpm[::-1]
+        for i in range(1, n_states):
+            A[i, i - 1] = 1.0
 
-    B = np.zeros((n_states, 1))
-    B[0, 0] = dfdpwm[-1]
+        B = np.zeros((n_states, 1))
+        B[0, 0] = dfdpwm[-1]
 
-    C = np.zeros((1, n_states))
-    C[0, 0] = 1.0
+        C = np.zeros((1, n_states))
+        C[0, 0] = 1.0
 
-    D = np.zeros((1, 1))
+        D = np.zeros((1, 1))
 
-    B_real = B * (RPM_MAX / PWM_MAX)
+        B_real = B * (RPM_MAX / PWM_MAX)
 
-    return A, B_real, C, D
+        eigs = np.abs(np.linalg.eigvals(A))
+        all_eigs.append((pwm_op, rpm_op, eigs))
+
+        if all(eigs < 1):
+            print(f"  Punto de operación seleccionado: PWM={pwm_op}, RPM={rpm_op}")
+            print(f"  |eigenvalues|: {eigs.round(4)}")
+            return A, B_real, C, D
+
+    print("  Ningún punto de operación produjo un sistema estable:")
+    for pwm_op, rpm_op, eigs in all_eigs:
+        print(f"    PWM={pwm_op}, RPM={rpm_op}: |eigs|={eigs.round(4)}")
+    raise ValueError("No se encontró un punto de operación estable en ninguno de los candidatos.")
 
 # ==============================================================
 # MAIN — CORRE TODO
@@ -213,16 +236,14 @@ if __name__ == '__main__':
 
     # Espacio de estados
     print("\n[5/5] Extrayendo espacio de estados...")
-    A, B, C, D = extract_state_space(model, pwm_op=90.0, rpm_op=35.0)
-    
-    # --- AQUI ESTA EL CAMBIO PARA CREAR EL .MAT ---
-    scipy.io.savemat('state_space_motor.mat', {'A': A, 'B': B, 'C': C, 'D': D, 'Ts': Ts})
+    A, B, C, D = extract_state_space(model)
+    scipy.io.savemat(BASE / 'state_space_motor.mat', {'A': A, 'B': B, 'C': C, 'D': D, 'Ts': Ts})
+    np.savez(BASE / 'state_space_motor.npz', A=A, B=B, C=C, D=D, Ts=Ts)
 
     print(f"\n  Matriz A:\n{np.array2string(A, precision=4)}")
     print(f"\n  Matriz B:\n{np.array2string(B, precision=4)}")
 
     eigs = np.abs(np.linalg.eigvals(A))
-    print(f"\n  |eigenvalues|: {eigs.round(4)}")
     print(f"  Sistema {'ESTABLE' if all(eigs < 1) else 'INESTABLE'}")
 
     print(f"\n  Archivos guardados:")
@@ -260,7 +281,7 @@ if __name__ == '__main__':
     axes[1].grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig('motor_nn_results.png', dpi=150)
+    plt.savefig(BASE / 'motor_nn_results.png', dpi=150)
     plt.show()
 
     
