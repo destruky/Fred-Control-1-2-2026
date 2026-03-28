@@ -256,3 +256,5 @@ if __name__ == '__main__':
     print("  >> data = load('state_space_motor.npz');")
     print("  >> sys_d = ss(A, B, C, D, 0.1);")
     print("  >> step(sys_d)")
+
+    #oli
