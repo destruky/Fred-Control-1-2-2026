@@ -1,6 +1,6 @@
 """
 FrED Control Moderno — Identificación de Motor DC con Red Neuronal
-Corre esto: python 01_motor_sysid_nn.py
+Corre esto: python motor_sysid_nn.py
 """
 import pandas as pd
 import numpy as np
