@@ -13,9 +13,6 @@ Pinout: `pinMotor=9`, `pinHotend=10`, `pinFan=8`, `termPin=A13`, encoder `C1=18/
 **Moderno:** Eugenio, Darío, Diego, Gael
 **Integrador (main):** destruky (Rodrigo)
 
-## CLAUDE.md — solo en `main`
-Este archivo vive **únicamente en `main`**. No modificar en branches personales. Si necesitas proponer un cambio, habla con el integrador.
-
 ## Equipos — CRÍTICO: no cruzar enfoques
 **Clásico/** `tfest()` → G(s) → Bayesian Optimization propone Kp/Ki/Kd (minimiza ITAE) → validar en Simulink (PID block) → implementar en FrED. PID Tuner se corre **una sola vez como baseline** para comparar contra BO vía ITAE. Multi-exp: `merge()` en MATLAB, nunca concatenar. PROHIBIDO: `ssest`, `n4sid`, espacio de estados, LQR.
 **Moderno/** NN PyTorch → Jacobiano → A,B,C,D → LQR en MATLAB → validar en Simulink (State-Space block + realimentación K). PROHIBIDO: `tfest()`, Transfer Fcn block, PID Tuner.
