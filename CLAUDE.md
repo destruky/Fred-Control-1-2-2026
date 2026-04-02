@@ -9,9 +9,9 @@ Hotend: Steinhart-Hart (A=1.1384e-3, B=2.3245e-4, C=9.489e-8, Raux=460Ω), shutd
 Pinout: `pinMotor=9`, `pinHotend=10`, `pinFan=8`, `termPin=A13`, encoder `C1=18/C2=19`
 
 ## Integrantes
-**Clásico:** Yali (Mariana), Hans, Sergio
+**Clásico:** Hans, Yali (Mariana), Sergio
 **Moderno:** Eugenio, Darío, Diego, Gael
-**Integrador (main):** destruky
+**Integrador (main):** destruky (Rodrigo)
 
 ## CLAUDE.md — solo en `main`
 Este archivo vive **únicamente en `main`**. No modificar en branches personales. Si necesitas proponer un cambio, habla con el integrador.
