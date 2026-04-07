@@ -109,7 +109,7 @@ def train_model(model, train_dl, val_dl, epochs=EPOCHS, lr=LR):
         if (epoch + 1) % 25 == 0 or epoch == 0:
             print(f"  Epoch {epoch+1:3d}/{epochs}: train={t_loss:.6f}  val={v_loss:.6f}")
 
-    model.load_state_dict(torch.load(BASE / 'motor_identifier.pth'))
+    model.load_state_dict(torch.load(BASE / 'motor_identifier.pth', weights_only=True))
     return history
 
 # ==============================================================
@@ -129,7 +129,92 @@ def simulate_multistep(model, df, window=WINDOW):
     return rpm_sim * RPM_MAX
 
 # ==============================================================
-# PASO 5: EXTRAER ESPACIO DE ESTADOS (JACOBIANO)
+# PASO 5: SANITY CHECK
+# Verifica que el modelo tiene sentido físico antes de extraer matrices.
+# ==============================================================
+def sanity_check(model, window=WINDOW):
+    print("\n  --- Sanity Check ---")
+    ok = True
+
+    # Subir PWM debe subir predicción de RPM
+    tests = [
+        (30,  5,  "PWM=30,  RPM=5   → debe subir"),
+        (60,  20, "PWM=60,  RPM=20  → debe subir"),
+        (90,  35, "PWM=90,  RPM=35  → cerca de SS, delta≈0"),
+        (120, 45, "PWM=120, RPM=45  → debe subir o mantenerse"),
+    ]
+
+    model.eval()
+    for pwm, rpm, desc in tests:
+        feat = torch.cat([
+            torch.full((window + 1,), pwm / PWM_MAX),
+            torch.full((window + 1,), rpm / RPM_MAX)
+        ]).unsqueeze(0)
+        with torch.no_grad():
+            pred = model(feat).item() * RPM_MAX
+        delta = pred - rpm
+        status = "OK" if delta >= -1.0 else "FAIL"
+        if delta < -2.0:
+            ok = False
+        print(f"    {desc}: pred={pred:.2f} RPM (Δ={delta:+.3f}) [{status}]")
+
+    # Gradiente total de PWM debe ser positivo
+    feat = torch.cat([
+        torch.full((window + 1,), 75 / PWM_MAX),
+        torch.full((window + 1,), 28 / RPM_MAX)
+    ]).unsqueeze(0).requires_grad_(True)
+    out = model(feat)
+    out.backward()
+    grad = feat.grad.squeeze().numpy()
+    dfdpwm = grad[:window + 1]
+    dfdrpm = grad[window + 1:]
+
+    scale = RPM_MAX / PWM_MAX
+    sum_pwm = dfdpwm.sum()
+    sum_rpm  = dfdrpm.sum()
+    dc_direct = sum_pwm * scale / (1.0 - sum_rpm) if abs(1 - sum_rpm) > 1e-6 else float('inf')
+
+    print(f"    Grad (PWM=75, RPM=28):")
+    print(f"      Σ(dfdpwm) = {sum_pwm:.6f} ({'OK +' if sum_pwm > 0 else 'FAIL -'})")
+    print(f"      Σ(dfdrpm) = {sum_rpm:.6f} (debe ≈ 1.0)")
+    print(f"      dfdpwm[-1] = {dfdpwm[-1]:.6f} ({'OK +' if dfdpwm[-1] > 0 else 'WARNING -'})")
+    print(f"      DC gain directa = {dc_direct:.4f} RPM/PWM (empírica ≈ 0.3-0.5)")
+
+    if sum_pwm < 0:
+        print(f"      WARNING: Σ(dfdpwm) negativo → modelo físicamente incorrecto")
+        ok = False
+    if dfdpwm[-1] < 0:
+        print(f"      WARNING: dfdpwm[-1] negativo → B[0,0] tendrá signo incorrecto en companion form simple")
+    if dc_direct < 0:
+        ok = False
+
+    print(f"  Sanity check: {'PASSED' if ok else 'FAILED'}")
+    return ok
+
+# ==============================================================
+# PASO 6: EXTRAER ESPACIO DE ESTADOS (JACOBIANO)
+#
+# Companion form COMPLETA con estados de PWM delay.
+#
+# El NARX tiene: rpm_n(k+1) = f(pwm_n(k-W..k), rpm_n(k-W..k))
+# La forma anterior solo tenía estados de RPM → los W+1 gradientes
+# de PWM se comprimían en un solo B[0,0] = dfdpwm[-1], perdiendo
+# los W gradientes restantes.
+#
+# Forma corregida:
+#   x(k) = [rpm(k), ..., rpm(k-W), pwm(k-1), ..., pwm(k-W)]
+#   dim(x) = (W+1) + W = 2W+1 = 11 estados
+#   u(k) = pwm(k)
+#   y(k) = rpm(k) = C*x
+#
+# En unidades físicas (RPM para rpm, PWM 0-255 para pwm/input):
+#   A[0, 0:W+1]    = dfdrpm[::-1]             (adimensional)
+#   A[0, W+1:2W+1] = dfdpwm[:W][::-1] * scale (PWM→RPM)
+#   B[0]   = dfdpwm[W] * scale                (pwm(k) → rpm(k+1))
+#   B[W+1] = 1                                (pwm(k) entra al delay chain)
+#
+# DC gain = Σ(dfdpwm) * scale / (1 - Σ(dfdrpm))
+#         ≈ 0.3-0.5 RPM/PWM para el motor del FrED
 # ==============================================================
 def extract_state_space(model, window=WINDOW):
     candidates = [
@@ -140,8 +225,97 @@ def extract_state_space(model, window=WINDOW):
         (80.0, 25.0),
         (100.0, 38.0),
     ]
+    scale = RPM_MAX / PWM_MAX
 
-    all_eigs = []
+    all_results = []
+    for pwm_op, rpm_op in candidates:
+        pwm_n = pwm_op / PWM_MAX
+        rpm_n = rpm_op / RPM_MAX
+
+        pwm_vec = torch.full((window + 1,), pwm_n, dtype=torch.float32)
+        rpm_vec = torch.full((window + 1,), rpm_n, dtype=torch.float32)
+
+        feat = torch.cat([pwm_vec, rpm_vec]).unsqueeze(0)
+        feat_var = feat.clone().detach().requires_grad_(True)
+        out = model(feat_var)
+        out.backward()
+        grad = feat_var.grad.squeeze().numpy()
+
+        dfdpwm = grad[:window + 1]   # ∂f/∂pwm(k-W), ..., ∂f/∂pwm(k)
+        dfdrpm = grad[window + 1:]   # ∂f/∂rpm(k-W), ..., ∂f/∂rpm(k)
+
+        # --- Companion form completa: 2W+1 estados ---
+        n = 2 * window + 1
+
+        A = np.zeros((n, n))
+        # Fila 0: dinámica de rpm(k+1)
+        A[0, :window + 1] = dfdrpm[::-1]
+        A[0, window + 1:] = dfdpwm[window - 1::-1] * scale
+
+        # Shift register de RPM
+        for i in range(1, window + 1):
+            A[i, i - 1] = 1.0
+
+        # Shift register de PWM
+        for j in range(window + 2, n):
+            A[j, j - 1] = 1.0
+
+        B = np.zeros((n, 1))
+        B[0, 0]          = dfdpwm[window] * scale  # pwm(k) → rpm(k+1)
+        B[window + 1, 0] = 1.0                      # pwm(k) → delay chain
+
+        C = np.zeros((1, n))
+        C[0, 0] = 1.0   # y = rpm(k)
+
+        D = np.zeros((1, 1))
+
+        # --- Verificaciones ---
+        eigs = np.linalg.eigvals(A)
+        eigs_abs = np.abs(eigs)
+        stable = all(eigs_abs < 1)
+
+        sum_pwm = dfdpwm.sum()
+        sum_rpm  = dfdrpm.sum()
+        dc_direct = sum_pwm * scale / (1.0 - sum_rpm) if abs(1 - sum_rpm) > 1e-6 else float('inf')
+        dc_matrix = (C @ np.linalg.solve(np.eye(n) - A, B)).item()
+
+        all_results.append({
+            'pwm': pwm_op, 'rpm': rpm_op,
+            'eigs_max': eigs_abs.max(), 'stable': stable,
+            'dc_direct': dc_direct, 'dc_matrix': dc_matrix,
+            'A': A, 'B': B, 'C': C, 'D': D,
+            'sum_pwm': sum_pwm, 'sum_rpm': sum_rpm,
+        })
+
+        print(f"  ({pwm_op:.0f} PWM, {rpm_op:.0f} RPM): "
+              f"|eigs|_max={eigs_abs.max():.4f}, "
+              f"DC={dc_direct:+.4f} RPM/PWM, "
+              f"Σpwm={sum_pwm:+.4f}, "
+              f"{'ESTABLE' if stable else 'inestable'}")
+
+    # Seleccionar: estable + DC positivo + DC más cercano al empírico (~0.4)
+    valid = [r for r in all_results if r['stable'] and r['dc_direct'] > 0]
+    if not valid:
+        # Fallback: companion form original W+1 estados con warning
+        print("\n  WARNING: companion form completa no produjo sistema estable+DC positivo.")
+        print("  Usando fallback: companion form original W+1 estados.")
+        return _extract_state_space_fallback(model, window, candidates)
+
+    best = min(valid, key=lambda r: abs(r['dc_direct'] - 0.4))
+
+    print(f"\n  SELECCIONADO: PWM={best['pwm']:.0f}, RPM={best['rpm']:.0f}")
+    print(f"    |eigs| max = {best['eigs_max']:.4f}")
+    print(f"    DC gain (directa)   = {best['dc_direct']:.4f} RPM/PWM")
+    print(f"    DC gain (C(I-A)⁻¹B) = {best['dc_matrix']:.4f} RPM/PWM")
+    print(f"    Σ(dfdpwm)={best['sum_pwm']:.6f}, Σ(dfdrpm)={best['sum_rpm']:.6f}")
+    print(f"    A: {best['A'].shape}, B: {best['B'].shape}")
+
+    return best['A'], best['B'], best['C'], best['D']
+
+
+def _extract_state_space_fallback(model, window, candidates):
+    """Companion form original W+1 estados — fallback si la completa falla."""
+    scale = RPM_MAX / PWM_MAX
     for pwm_op, rpm_op in candidates:
         pwm_n = pwm_op / PWM_MAX
         rpm_n = rpm_op / RPM_MAX
@@ -158,34 +332,28 @@ def extract_state_space(model, window=WINDOW):
         dfdpwm = grad[:window + 1]
         dfdrpm = grad[window + 1:]
 
-        n_states = window + 1
-        A = np.zeros((n_states, n_states))
+        n = window + 1
+        A = np.zeros((n, n))
         A[0, :] = dfdrpm[::-1]
-        for i in range(1, n_states):
+        for i in range(1, n):
             A[i, i - 1] = 1.0
 
-        B = np.zeros((n_states, 1))
-        B[0, 0] = dfdpwm[-1]
+        B = np.zeros((n, 1))
+        B[0, 0] = dfdpwm[-1] * scale
 
-        C = np.zeros((1, n_states))
+        C = np.zeros((1, n))
         C[0, 0] = 1.0
 
         D = np.zeros((1, 1))
 
-        B_real = B * (RPM_MAX / PWM_MAX)
-
         eigs = np.abs(np.linalg.eigvals(A))
-        all_eigs.append((pwm_op, rpm_op, eigs))
-
         if all(eigs < 1):
-            print(f"  Punto de operación seleccionado: PWM={pwm_op}, RPM={rpm_op}")
-            print(f"  |eigenvalues|: {eigs.round(4)}")
-            return A, B_real, C, D
+            print(f"  Fallback seleccionado: PWM={pwm_op}, RPM={rpm_op}, "
+                  f"|eigs|_max={eigs.max():.4f}")
+            return A, B, C, D
 
-    print("  Ningún punto de operación produjo un sistema estable:")
-    for pwm_op, rpm_op, eigs in all_eigs:
-        print(f"    PWM={pwm_op}, RPM={rpm_op}: |eigs|={eigs.round(4)}")
-    raise ValueError("No se encontró un punto de operación estable en ninguno de los candidatos.")
+    raise ValueError("No se encontró punto de operación estable en ningún candidato.")
+
 
 # ==============================================================
 # MAIN — CORRE TODO
@@ -234,27 +402,29 @@ if __name__ == '__main__':
     print(f"  1-step:     RMSE = {rmse:.2f} RPM,  R² = {r2:.4f}")
     print(f"  Multi-step: RMSE = {rmse_multi:.2f} RPM")
 
+    # Sanity check
+    model_ok = sanity_check(model)
+
     # Espacio de estados
     print("\n[5/5] Extrayendo espacio de estados...")
     A, B, C, D = extract_state_space(model)
+
     scipy.io.savemat(BASE / 'state_space_motor.mat', {'A': A, 'B': B, 'C': C, 'D': D, 'Ts': Ts})
     np.savez(BASE / 'state_space_motor.npz', A=A, B=B, C=C, D=D, Ts=Ts)
 
-    print(f"\n  Matriz A:\n{np.array2string(A, precision=4)}")
+    print(f"\n  Matriz A ({A.shape[0]}x{A.shape[1]}):\n{np.array2string(A, precision=4)}")
     print(f"\n  Matriz B:\n{np.array2string(B, precision=4)}")
 
     eigs = np.abs(np.linalg.eigvals(A))
+    print(f"  |eigs| max: {eigs.max():.4f}")
     print(f"  Sistema {'ESTABLE' if all(eigs < 1) else 'INESTABLE'}")
 
     print(f"\n  Archivos guardados:")
     print(f"    motor_identifier.pth  — pesos de la red")
-    print(f"    state_space_motor.mat — matrices A, B, C, D") # Cambié el nombre aquí
+    print(f"    state_space_motor.mat — matrices A, B, C, D")
 
-    # ... (El código de las gráficas déjalo exactamente igual) ...
-
-    # --- CAMBIE LAS INSTRUCCIONES FINALES PARA MATLAB ---
     print("\n✅ LISTO.")
-    print("Siguiente paso: arrastra el archivo state_space_motor.mat a MATLAB o corre esto:")
+    print("Siguiente paso en MATLAB:")
     print("  >> load('state_space_motor.mat');")
     print("  >> sys_d = ss(A, B, C, D, Ts);")
     print("  >> step(sys_d)")
@@ -283,5 +453,3 @@ if __name__ == '__main__':
     plt.tight_layout()
     plt.savefig(BASE / 'motor_nn_results.png', dpi=150)
     plt.show()
-
-    
