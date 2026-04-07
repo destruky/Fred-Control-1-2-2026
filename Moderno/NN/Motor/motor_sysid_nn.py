@@ -419,16 +419,6 @@ if __name__ == '__main__':
     print(f"  |eigs| max: {eigs.max():.4f}")
     print(f"  Sistema {'ESTABLE' if all(eigs < 1) else 'INESTABLE'}")
 
-    print(f"\n  Archivos guardados:")
-    print(f"    motor_identifier.pth  — pesos de la red")
-    print(f"    state_space_motor.mat — matrices A, B, C, D")
-
-    print("\n✅ LISTO.")
-    print("Siguiente paso en MATLAB:")
-    print("  >> load('state_space_motor.mat');")
-    print("  >> sys_d = ss(A, B, C, D, Ts);")
-    print("  >> step(sys_d)")
-
     # Graficar
     t_s = (test_df['t_ms'].values - test_df['t_ms'].values[0]) / 1000.0
     fig, axes = plt.subplots(2, 1, figsize=(14, 8))
@@ -453,3 +443,12 @@ if __name__ == '__main__':
     plt.tight_layout()
     plt.savefig(BASE / 'motor_nn_results.png', dpi=150)
     plt.show()
+
+    print(f"\n  Archivos guardados:")
+    print(f"    motor_identifier.pth  — pesos de la red")
+    print(f"    state_space_motor.mat — matrices A, B, C, D")
+    print("\n✅ LISTO.")
+    print("Siguiente paso en MATLAB:")
+    print("  >> load('state_space_motor.mat');")
+    print("  >> sys_d = ss(A, B, C, D, Ts);")
+    print("  >> step(sys_d)")
