@@ -12,12 +12,8 @@ clc; clear; close all;
 % 1. RUTAS — dinámicas, sin hardcodear paths
 % -------------------------------------------------------------------------
 ruta_script = fileparts(mfilename('fullpath'));
-mat_file    = fullfile(ruta_script, '..', 'NN', 'state_space_hotend.mat');
+mat_file    = fullfile(ruta_script, 'state_space_hotend.mat');
 
-if ~exist(mat_file, 'file')
-    % Fallback: buscar en la misma carpeta del script
-    mat_file = fullfile(ruta_script, 'state_space_hotend.mat');
-end
 if ~exist(mat_file, 'file')
     error('No se encontró state_space_hotend.mat\nBusqué en: %s', mat_file);
 end
