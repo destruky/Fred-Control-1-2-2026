@@ -19,7 +19,8 @@ float uMin_H = 0.0, uMax_H = 255.0;
 float K_H[6] = {0.456, -0.123, 0.089, 0.012, -0.005, 0.001};
 float Nbar_H = 0.850;
 
-// Memoria Histórica (Ventana W=5, Modelo de 6 estados)
+// Estados reducidos: 201 estados (companion form W=100) → ~6 vía minreal()
+// Estos buffers aproximan los 6 estados abstractos del sistema reducido
 float y_hist_H[3] = {25.0, 25.0, 25.0}; // Temperaturas pasadas
 float u_hist_H[3] = {0.0, 0.0, 0.0};    // PWM pasado
 bool lqr_H_initialized = false;

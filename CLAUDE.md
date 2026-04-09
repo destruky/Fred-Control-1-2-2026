@@ -44,9 +44,10 @@ Salida: `state_space_hotend.mat` en `Moderno/NN/Hotend/` — 201 estados (compan
 **15–17 abr:** Control adaptativo (Clásico: ML ajusta PID; Moderno: re-linealización online). Comparativa.
 
 ## Moderno — estructura de carpetas (para no confundir)
-`Moderno/MAIN_F/` = sketch PID (igual que Clásico, base de referencia). `Moderno/LQRMAIN_F/` = sketch LQR activo — este es el que se flashea para control moderno.
-Scripts hotend: `NN/Hotend/fred_lqr_hotend_design.m` = diseño LQR (correr para obtener K/Nbar). `MATLAB/Hotend/fred_lqr_hotend.m` = prepara workspace para Simulink (correr después del primero).
-`design_motor_lqr.m` apunta a `NN/Motor/state_space_motor.mat` — no usar ni crear copias locales del .mat.
+`Moderno/MAIN_F/` = sketch PID (base de referencia, no tocar). `Moderno/LQRMAIN_F/` = sketch LQR activo — este es el que se flashea.
+`Moderno/Datos CSV/` = copia de referencia manual, **no la usan los scripts**. Los scripts cargan de `NN/Motor/` y `NN/Hotend/` directamente.
+**Flujo hotend completo:** (1) `NN/Hotend/fred_lqr_hotend_design.m` — diseño LQR, obtiene K y Nbar. (2) Abrir `Hotendcontrol.slx` → genera `lqr_valores_hotend.mat` (~6 est. vía minreal). (3) `MATLAB/Hotend/fred_lqr_hotend.m` — carga ese .mat y prepara workspace para Simulink.
+`design_motor_lqr.m` apunta a `NN/Motor/state_space_motor.mat` — no crear copias locales del .mat.
 
 ## Arduino — errores conocidos
 1. `HOTEND.h` declara `prevTime` global → usar `prevTime_sample` en los `.ino`

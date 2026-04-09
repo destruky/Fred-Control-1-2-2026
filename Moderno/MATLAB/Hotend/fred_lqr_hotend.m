@@ -11,7 +11,7 @@ ruta_script = fileparts(mfilename('fullpath'));
 % 1. Cargar el modelo térmico identificado
 % lqr_valores_hotend.mat fue generado en Simulink aplicando minreal()
 % al state_space_hotend.mat (201 estados, generado por hotend_sysid_nn.py)
-% con tolerancia 1e-6. Resultado: ~11 estados controlables.
+% con tolerancia 1e-6. Resultado: ~6 estados controlables.
 % El flujo de reducción está en Hotendcontrol.slx — no es reproducible desde script.
 % Variables contenidas: Ar, Br, Cr, Dr (sistema reducido en espacio de estados)
 load(fullfile(ruta_script, 'lqr_valores_hotend.mat'));

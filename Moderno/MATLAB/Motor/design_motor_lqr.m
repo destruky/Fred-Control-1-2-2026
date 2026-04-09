@@ -1,7 +1,8 @@
 % =========================================================================
 % DISEÑO LQR — MOTOR DC FrED (Control Moderno)
 % =========================================================================
-% Planta: red neuronal PyTorch linealizada → A,B,C,D (6 estados, Ts=0.1s)
+% Planta: red neuronal PyTorch linealizada → A,B,C,D (11 estados, Ts=0.1s)
+%         Companion form completa 2*W+1 con W=5.
 % Origen: state_space_motor.mat generado por motor_sysid_nn.py
 %         Punto de operación: PWM=75, RPM=28. Sistema estable en lazo abierto.
 % =========================================================================
