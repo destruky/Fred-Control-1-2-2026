@@ -1,5 +1,10 @@
 % =========================================================================
 % CONTROL LQR — HOTEND FrED (Control Moderno)
+% ROL: DISEÑO LQR — correr este script para obtener K y Nbar del hotend.
+%      Carga state_space_hotend.mat (201 est.), aplica minreal(), diseña
+%      dlqr() y grafica respuesta. Salida: variables K y Nbar en workspace.
+%      Después de correr este, correr MATLAB/Hotend/fred_lqr_hotend.m
+%      para preparar el workspace de Simulink.
 % =========================================================================
 % Planta: red neuronal PyTorch linealizada → A,B,C,D (11 estados)
 % Problema: rank(controlabilidad) = 6/11 — dlqr falla en sistema completo

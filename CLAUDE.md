@@ -24,7 +24,7 @@ Motor: Kp=25, Ki=2.5, Kd=1.5 | Hotend: Kp=1.8, Ki=0.9, Kd=0.3
 ## Red Neuronal Motor (`Moderno/NN/Motor/motor_sysid_nn.py`)
 Feedforward 12→32→32→1, W=5. Input: `[pwm(k-5..k), rpm(k-5..k)]` → `rpm(k+1)`.
 Norm: PWM/255, RPM/55. Op point: PWM=75, RPM=28 (eigenvalues estables). Rutas: `Path(__file__).parent`.
-Salida: `state_space_motor.mat` en `Moderno/NN/Motor/` — A(6×6), B(6×1), C(1×6), D(1×1), Ts=0.1s. Sistema estable en lazo abierto.
+Salida: `state_space_motor.mat` en `Moderno/NN/Motor/` — A(11×11), B(11×1), C(1×11), D(1×1), Ts=0.1s. Companion form completa 2W+1=11 estados. Sistema estable en lazo abierto.
 
 ## Red Neuronal Hotend (`Moderno/NN/Hotend/hotend_sysid_nn.py`)
 MLP con Tanh, W=100 (10s historia). Input: `[pwm(k-W..k), temp(k-W..k)]` → `temp(k+1)`. Entrenamiento en 2 fases: 1-step warmup + NOE multi-step (horizonte 20→300 pasos).
@@ -35,13 +35,18 @@ Salida: `state_space_hotend.mat` en `Moderno/NN/Hotend/` — 201 estados (compan
 **Hotend (escalón):** hotend60/100/180/220.csv. **No usar PRBS** — τ≈100s necesita dwell≥300s, PRBS produce ganancia negativa.
 
 ## Estado (2026-03-31)
-✅ G(s) motor (~71% FIT), G(s) hotend (~77-88%), NN motor (RMSE=0.54, R²=0.9988), A/B/C/D motor (6 estados, estable), NN hotend + A/B/C/D hotend (201 estados, requiere minreal() → ~6 est. para LQR).
+✅ G(s) motor (~71% FIT), G(s) hotend (~77-88%), NN motor (RMSE=0.54, R²=0.9988), A/B/C/D motor (11 estados, estable), NN hotend + A/B/C/D hotend (201 estados, requiere minreal() → ~6 est. para LQR).
 ⏳ A/B/C/D hotend, Simulink Clásico, LQR motor+hotend, PIDs en FrED físico, LQR en FrED físico, control adaptativo.
 
 ## Plan (deadline ~17 abril 2026)
 **1–7 abr:** Clásico: Simulink+PID Tuner. Moderno: A/B/C/D hotend + LQR motor+hotend en MATLAB.
 **8–14 abr:** Ambos: implementar y validar en FrED físico.
 **15–17 abr:** Control adaptativo (Clásico: ML ajusta PID; Moderno: re-linealización online). Comparativa.
+
+## Moderno — estructura de carpetas (para no confundir)
+`Moderno/MAIN_F/` = sketch PID (igual que Clásico, base de referencia). `Moderno/LQRMAIN_F/` = sketch LQR activo — este es el que se flashea para control moderno.
+Scripts hotend: `NN/Hotend/fred_lqr_hotend_design.m` = diseño LQR (correr para obtener K/Nbar). `MATLAB/Hotend/fred_lqr_hotend.m` = prepara workspace para Simulink (correr después del primero).
+`design_motor_lqr.m` apunta a `NN/Motor/state_space_motor.mat` — no usar ni crear copias locales del .mat.
 
 ## Arduino — errores conocidos
 1. `HOTEND.h` declara `prevTime` global → usar `prevTime_sample` en los `.ino`
