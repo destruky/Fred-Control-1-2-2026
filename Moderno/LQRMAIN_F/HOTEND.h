@@ -14,7 +14,7 @@ float uMin_H = 0.0, uMax_H = 255.0;
 
 // ==========================================
 // PARÁMETROS LQR HOTEND (De tabla MATLAB)
-// TODO: Reemplazar con ganancias reales de fred_lqr_hotend.m
+// TODO: Reemplazar con ganancias reales de fred_lqr_hotend_design.m
 // ==========================================
 float K_H[6] = {0.456, -0.123, 0.089, 0.012, -0.005, 0.001};
 float Nbar_H = 0.850;

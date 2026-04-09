@@ -1,8 +1,8 @@
 % =========================================================================
 % PREPARACIÓN DEL WORKSPACE PARA SIMULINK - HOTEND
-% ROL: WORKSPACE SIMULINK — correr este script DESPUÉS de fred_lqr_hotend_design.m.
-%      Carga lqr_valores_hotend.mat (Ar,Br,Cr,Dr pre-reducidos desde Simulink),
-%      aplica minreal(), diseña LQR y deja variables listas para Hotendcontrol.slx.
+% ROL: WORKSPACE SIMULINK — prepara variables para Hotendcontrol.slx.
+%      Requiere lqr_valores_hotend.mat (generado desde Hotendcontrol.slx, NO desde
+%      fred_lqr_hotend_design.m). Carga Ar,Br,Cr,Dr, aplica minreal() y diseña LQR.
 % =========================================================================
 clc; clear; close all;
 

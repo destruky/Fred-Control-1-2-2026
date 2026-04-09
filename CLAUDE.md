@@ -36,7 +36,7 @@ Salida: `state_space_hotend.mat` en `Moderno/NN/Hotend/` — 201 estados (compan
 
 ## Estado (2026-03-31)
 ✅ G(s) motor (~71% FIT), G(s) hotend (~77-88%), NN motor (RMSE=0.54, R²=0.9988), A/B/C/D motor (11 estados, estable), NN hotend + A/B/C/D hotend (201 estados, requiere minreal() → ~6 est. para LQR).
-⏳ A/B/C/D hotend, Simulink Clásico, LQR motor+hotend, PIDs en FrED físico, LQR en FrED físico, control adaptativo.
+⏳ Simulink Clásico, LQR motor+hotend (K pendientes de correr MATLAB), PIDs en FrED físico, LQR en FrED físico, control adaptativo.
 
 ## Plan (deadline ~17 abril 2026)
 **1–7 abr:** Clásico: Simulink+PID Tuner. Moderno: A/B/C/D hotend + LQR motor+hotend en MATLAB.
