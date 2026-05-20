@@ -53,20 +53,33 @@ if rank(ctrb(Ar, Br)) < nr
 end
 
 % -------------------------------------------------------------------------
-% 4. DISEÑO LQR SOBRE SISTEMA REDUCIDO
+% 4. DISEÑO SERVO-LQR (LQI) SOBRE SISTEMA REDUCIDO
 % -------------------------------------------------------------------------
 % Q penaliza error de temperatura | R penaliza esfuerzo de control (PWM)
-% Subir Q → respuesta más rápida pero más overshooot
+% Subir Q → respuesta más rápida pero más overshoot
 % Subir R → PWM más conservador pero más lento
-Q = Cr' * Cr * 100;
-R = 1;
+% Aumentamos con integrador del error para eliminar error estacionario.
+% Peso integrador conservador (térmica lenta, evita oscilación).
+% NOTA: servo-LQR manual con dlqr discreto, NO lqi() de MATLAB.
 
-[K, ~, ~] = dlqr(Ar, Br, Q, R);
+A_aug = [Ar,    zeros(nr,1);
+         -Cr,   1];                   % 7x7 (integrador discreto)
+B_aug = [Br; 0];                       % 7x1
+C_aug = [Cr, 0];                       % 1x7
+D_aug = Dr;                            % 1x1
 
-eigs_cl = abs(eig(Ar - Br*K));
+Q_aug = blkdiag(Cr'*Cr*100, 5);        % peso integrador = 5 (térmica lenta)
+R_aug = 1;
+
+[K_aug, ~, ~] = dlqr(A_aug, B_aug, Q_aug, R_aug);
+K  = K_aug(1:nr);                      % 1x6 — realimentación de estados
+Ki = K_aug(nr+1);                      % escalar — ganancia del integrador
+
+eigs_cl = abs(eig(A_aug - B_aug*K_aug));
 fprintf('\nGanancia K (1x%d):\n', nr);
 disp(K);
-fprintf('|eigenvalues| lazo cerrado: %s\n', mat2str(eigs_cl', 4));
+fprintf('Ki_hotend: %.6f\n', Ki);
+fprintf('|eigenvalues| lazo cerrado aumentado: %s\n', mat2str(eigs_cl', 4));
 
 if all(eigs_cl < 1)
     fprintf('Lazo cerrado: ESTABLE ✓\n');
@@ -79,8 +92,20 @@ end
 % -------------------------------------------------------------------------
 % Condición steady-state discreta: x(k+1) = x(k) → (A-I)x + Bu = 0
 % Se resuelve: [A-I, B; C, D] \ [0; 1], luego Nbar = Nu + K*Nx
+% IMPORTANTE: Nbar se calcula con el sistema ORIGINAL (Ar, Br, Cr, Dr),
+% NO con el aumentado — Nbar es feedforward del setpoint a la planta.
 Nbar = rscale_discrete(Ar, Br, Cr, Dr, K);
 fprintf('Nbar = %.6f\n', Nbar);
+
+% -------------------------------------------------------------------------
+% 5b. SALIDA ARDUINO-READY (copy-paste a LQR_HOTEND.h)
+% -------------------------------------------------------------------------
+fprintf('\n--- COPIAR A LQR_HOTEND.h ---\n');
+fprintf('double K_LQR_H[%d] = {%s};\n', nr, ...
+    strjoin(arrayfun(@(x) sprintf('%.6f', x), K, 'UniformOutput', false), ', '));
+fprintf('double Ki_LQR_H = %.6f;\n', Ki);
+fprintf('double Nbar_H = %.6f;\n', Nbar);
+fprintf('-------------------------------\n');
 
 % -------------------------------------------------------------------------
 % 6. SIMULACIÓN — lazo cerrado con prealimentación, ref=190°C, 300s

@@ -10,9 +10,9 @@ const unsigned long SAMPLE_DT  = 100;   // ms
 const unsigned long DWELL_TIME = 1500;  // ms entre cambios de PWM
 
 // ── PRBS ───────────────────────────────────────────────
-const int pwmLevels[] = {30, 60, 90, 120, 150};
+const int pwmLevels[] = {124, 128, 132, 136, 140};  // franja lineal real: zona muerta=120, satura ~140
 const int N_LEVELS    = 5;
-int currentPwm        = 60;
+int currentPwm        = 132;
 
 // ══════════════════════════════════════════════════════
 void setup() {

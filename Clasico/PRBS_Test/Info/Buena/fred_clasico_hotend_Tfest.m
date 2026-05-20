@@ -3,7 +3,7 @@
 % G(s) = K / (tau*s + 1) * e^(-theta*s)
 clear; clc; close all;
 
-cd 'C:\Users\rquin\OneDrive\Desktop\Fred-Testing\FrED-TEC\Clasico\PRBS_Test\Info\Buena'
+cd 'C:\Users\rquin\OneDrive\Desktop\Acceso a Claudio\FrED-TEC\Clasico\PRBS_Test\Info\Buena'
 
 %% ============================================================
 %  1. CARGAR

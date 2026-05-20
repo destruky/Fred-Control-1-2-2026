@@ -88,6 +88,7 @@ void loop() {
       heater_m = 0;
       // Mantener el historial estable si está apagado
       for(int i=0; i<6; i++) temp_history[i] = temp_actual;
+      integral_error_H = 0.0;  // reset integrador al apagar
     }
 
     // --- APLICAR LQR: MOTOR DC ---
@@ -98,8 +99,9 @@ void loop() {
     } else {
       analogWrite(pinMotor, 0);
       moto_m = 0;
-      // Mantener el historial estable si está apagado
-      for(int i=0; i<N_ESTADOS_M; i++) rpm_history[i] = 0;
+      // Mantener el historial estable si está apagado (consistente con hotend)
+      for (int i = 0; i < N_ESTADOS_M; i++) rpm_history[i] = N_rpm;
+      integral_error_M = 0.0;  // reset integrador al apagar
     }
   }
 
@@ -151,9 +153,15 @@ void processInput(String command) {
     int f = command.indexOf(','), s = command.indexOf(',', f + 1);
     if (f > 0 && s > f) { Kp_M = command.substring(5, f).toFloat(); Ki_M = command.substring(f + 1, s).toFloat(); Kd_M = command.substring(s + 1).toFloat(); }
   }
-  // Actualización LQR adaptativo desde Python: "LQRH:k0,k1,k2,k3,k4,k5,nbar"
+  // Actualización LQR adaptativo desde Python (backward-compatible):
+  //   Formato viejo: "LQRH:k0..k5,nbar"      (6 comas)
+  //   Formato nuevo: "LQRH:k0..k5,ki,nbar"   (7 comas, incluye Ki_LQR_H)
   else if (command.startsWith("LQRH:")) {
     String vals = command.substring(5);
+    // Contar comas
+    int n_commas = 0;
+    for (int i = 0; i < (int)vals.length(); i++) if (vals[i] == ',') n_commas++;
+
     int pos = 0;
     for (int i = 0; i < 6; i++) {
       int comma = vals.indexOf(',', pos);
@@ -161,12 +169,29 @@ void processInput(String command) {
       K_LQR_H[i] = vals.substring(pos, comma).toDouble();
       pos = comma + 1;
     }
-    Nbar_H = vals.substring(pos).toDouble();
-    Serial.println("LQR_H actualizado");
+    if (n_commas == 6 + 1) {
+      // Formato nuevo: incluye Ki_LQR
+      int comma = vals.indexOf(',', pos);
+      Ki_LQR_H = vals.substring(pos, comma).toDouble();
+      pos = comma + 1;
+      Nbar_H = vals.substring(pos).toDouble();
+      Serial.println("LQR_H actualizado (con Ki)");
+    } else {
+      // Formato viejo: solo Nbar
+      Nbar_H = vals.substring(pos).toDouble();
+      Serial.println("LQR_H actualizado (legacy, sin Ki)");
+    }
+    integral_error_H = 0.0;  // reset al recibir nuevos gains
   }
-  // Actualización LQR adaptativo desde Python: "LQRM:k0..k10,nbar" (11 estados)
+  // Actualización LQR adaptativo desde Python (backward-compatible, 11 estados):
+  //   Formato viejo: "LQRM:k0..k10,nbar"      (11 comas)
+  //   Formato nuevo: "LQRM:k0..k10,ki,nbar"   (12 comas, incluye Ki_LQR_M)
   else if (command.startsWith("LQRM:")) {
     String vals = command.substring(5);
+    // Contar comas
+    int n_commas = 0;
+    for (int i = 0; i < (int)vals.length(); i++) if (vals[i] == ',') n_commas++;
+
     int pos = 0;
     for (int i = 0; i < N_ESTADOS_M; i++) {
       int comma = vals.indexOf(',', pos);
@@ -174,7 +199,18 @@ void processInput(String command) {
       K_LQR_M[i] = vals.substring(pos, comma).toDouble();
       pos = comma + 1;
     }
-    Nbar_M = vals.substring(pos).toDouble();
-    Serial.println("LQR_M actualizado");
+    if (n_commas == N_ESTADOS_M + 1) {
+      // Formato nuevo: incluye Ki_LQR
+      int comma = vals.indexOf(',', pos);
+      Ki_LQR_M = vals.substring(pos, comma).toDouble();
+      pos = comma + 1;
+      Nbar_M = vals.substring(pos).toDouble();
+      Serial.println("LQR_M actualizado (con Ki)");
+    } else {
+      // Formato viejo: solo Nbar
+      Nbar_M = vals.substring(pos).toDouble();
+      Serial.println("LQR_M actualizado (legacy, sin Ki)");
+    }
+    integral_error_M = 0.0;  // reset al recibir nuevos gains
   }
 }

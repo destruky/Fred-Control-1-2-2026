@@ -4,8 +4,8 @@
 % This script:
 % 1) Loads G_hotend from fred_modelos_pid.mat located in the same folder
 % 2) Tunes Kp, Ki, Kd using Bayesian Optimization
-% 3) Minimizes ITAE for a 190 °C step over 800 s with Ts = 0.1 s
-%    - Simulation uses discrete plant + saturated PWM [30,255] + anti-windup
+% 3) Minimizes ITAE for a 200 °C step over 800 s with Ts = 0.1 s
+%    - Simulation uses discrete plant + saturated PWM [0,255] + anti-windup
 %    - Overshoot is penalized (hard cutoff at 250 °C, soft penalty per °C)
 % 4) Compares the optimized PID against current FrED gains
 % 5) Saves results to fred_bo_hotend_results.mat
@@ -18,12 +18,21 @@
 clear; clc; close all;
 
 %% 1) Build path and load model
+% Try same folder as script first, then search in MATLAB path
 script_dir = fileparts(mfilename('fullpath'));
 mat_file   = fullfile(script_dir, 'fred_modelos_pid.mat');
 
 if ~isfile(mat_file)
-    error('Could not find fred_modelos_pid.mat in the same folder as this script.');
+    found = which('fred_modelos_pid.mat');
+    if ~isempty(found)
+        mat_file = found;
+    else
+        error(['Could not find fred_modelos_pid.mat. ', ...
+               'Run from folder with the .mat or add it to MATLAB path.']);
+    end
 end
+
+fprintf('Loading model from: %s\n', mat_file);
 
 S = load(mat_file);
 
@@ -41,19 +50,19 @@ end
 Ts        = 0.1;             % Sampling time of real system
 T_end     = 800;             % Long horizon because hotend is slow (tau~100s)
 t         = 0:Ts:T_end;      % Time vector
-ref_value = 190;             % Reference temperature in °C
+ref_value = 200;             % Reference temperature in °C
 r         = ref_value * ones(size(t));
 
-%% 3) Current FrED PID values (source of truth: MAIN_F.ino)
-Kp_actual = 1.8;
-Ki_actual = 0.9;
-Kd_actual = 0.3;
+%% 3) Current FrED PID values (manual del año pasado para hotend)
+Kp_actual = 25.0;
+Ki_actual = 2.5;
+Kd_actual = 1.5;
 
 %% 4) Bayesian Optimization search variables
 vars = [
-    optimizableVariable('Kp', [0.1, 10], 'Type', 'real')
-    optimizableVariable('Ki', [0.01,  5], 'Type', 'real')
-    optimizableVariable('Kd', [0.0,   2], 'Type', 'real')
+    optimizableVariable('Kp', [30.0, 60.0], 'Type', 'real')
+    optimizableVariable('Ki', [5.0, 20.0], 'Type', 'real')
+    optimizableVariable('Kd', [0.1, 10.0], 'Type', 'real')
 ];
 
 %% 5) Evaluate current PID for comparison
@@ -183,7 +192,7 @@ function y = simLoop(Kp, Ki, Kd, Tf, G_hotend, t, ref_val)
     e_prv = 0;       % previous error for derivative
     d_f   = 0;       % derivative filter state
 
-    PWM_MIN = 30;
+    PWM_MIN = 0;      % hotend NO tiene zona muerta (PWM=0 simplemente apaga el heater)
     PWM_MAX = 255;
 
     for k = 1:n

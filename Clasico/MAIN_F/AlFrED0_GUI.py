@@ -1,4 +1,4 @@
-# LIBRARIES RQUIERED:
+﻿# LIBRARIES RQUIERED:
 
 import sys
 import platform
@@ -69,14 +69,19 @@ def encontrar_puerto_arduino():
         if ("arduino" in desc) or ("usb serial" in desc) or ("ch340" in desc) or ("1a86" in hwid) or ("2341" in hwid):
             return p.device
 
-    if platform.system() == "Windows": return "COM7"
+    if platform.system() == "Windows": return "COM3"
     elif platform.system() == "Linux": return "/dev/ttyACM0"
     elif platform.system() == "Darwin": return "/dev/tty.usbmodem1101"
     else: return None
 
 try:
     puerto = encontrar_puerto_arduino() or "/dev/ttyACM0"
+    print(f"[DEBUG] Puerto detectado: {puerto}")
     arduino = serial.Serial(puerto, 115200, timeout=1)
+    print(f"[DEBUG] Puerto abierto: {arduino.port}, is_open={arduino.is_open}")
+    time.sleep(2)
+    arduino.reset_input_buffer()
+    print(f"[DEBUG] Buffer limpiado. in_waiting tras 2s = {arduino.in_waiting}")
 except Exception as e:
     print(f"Error al abrir el puerto serial: {e}")
     sys.exit(1)
@@ -96,9 +101,12 @@ class PlotCanvas(FigureCanvas):
     def plot(self, data, ylabel=""):
         self.axes.cla()
         if len(data) > 0:
-            self.axes.plot(data, linestyle='-', linewidth=1.2, color='#2980b9')
+            t = [i * 0.1 for i in range(len(data))]  # eje X en segundos (10 Hz)
+            self.axes.plot(t, data, linestyle='-', linewidth=1.2, color='#2980b9')
+            self.axes.set_xlim(0, 30)
         if ylabel:
             self.axes.set_ylabel(ylabel, fontsize=8)
+        self.axes.set_xlabel("Tiempo (s)", fontsize=7)
         self.axes.tick_params(labelsize=7)
         self.axes.grid(True, alpha=0.4)
         self.draw()
@@ -150,21 +158,16 @@ class ControlGUI(QWidget):
         # BUILD UI
         self._build_ui()
 
-        # CAMERA
-        if platform.system() == "Windows":
-            self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-        else:
-            self.cap = cv2.VideoCapture(0)
-        if not self.cap.isOpened():
-            self.label_camara.setText("Cámara no disponible")
-
-        self.timer_camara = QTimer()
-        self.timer_camara.timeout.connect(self.actualizar_imagen_camara)
-        self.timer_camara.start(50)
+        # CAMERA — desactivada para pruebas PID (causa freeze en Windows con DSHOW)
+        self.cap = None
+        self.label_camara.setText("Cámara desactivada para pruebas PID")
+        # self.timer_camara = QTimer()
+        # self.timer_camara.timeout.connect(self.actualizar_imagen_camara)
+        # self.timer_camara.start(50)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.actualizar)
-        self.timer.start(250)
+        self.timer.start(500)  # 2 Hz — menos carga sobre serial
 
         for i in range(4):
             self.actualizar_indicador_estado(i)
@@ -330,17 +333,17 @@ class ControlGUI(QWidget):
         pid_layout.setSpacing(5)
         pid_layout.setLabelAlignment(Qt.AlignRight)
 
-        self.le_kp_h = QLineEdit("1.8")
-        self.le_ki_h = QLineEdit("0.9")
-        self.le_kd_h = QLineEdit("0.3")
+        self.le_kp_h = QLineEdit("9.9657")
+        self.le_ki_h = QLineEdit("4.9947")
+        self.le_kd_h = QLineEdit("0.0183")
         pid_layout.addRow("Hotend Kp:", self.le_kp_h)
         pid_layout.addRow("Hotend Ki:", self.le_ki_h)
         pid_layout.addRow("Hotend Kd:", self.le_kd_h)
         pid_layout.addRow(make_separator())
 
-        self.le_kp_m = QLineEdit("25.0")
-        self.le_ki_m = QLineEdit("2.5")
-        self.le_kd_m = QLineEdit("1.5")
+        self.le_kp_m = QLineEdit("2.3480")
+        self.le_ki_m = QLineEdit("9.9974")
+        self.le_kd_m = QLineEdit("0.2064")
         pid_layout.addRow("Motor Kp:", self.le_kp_m)
         pid_layout.addRow("Motor Ki:", self.le_ki_m)
         pid_layout.addRow("Motor Kd:", self.le_kd_m)
@@ -550,6 +553,8 @@ class ControlGUI(QWidget):
     # COMPUTER VISION
 
     def actualizar_imagen_camara(self):
+        if self.cap is None:
+            return
         if not (hasattr(self, 'cap') and self.cap and self.cap.isOpened()):
             return
         ret, frame = self.cap.read()
@@ -730,7 +735,7 @@ class ControlGUI(QWidget):
         except Exception:
             pass
 
-        max_len = 100
+        max_len = 300  # 30 s a 10 Hz de telemetría del Arduino
         self.canvas_temp.plot(self.temp_data[-max_len:], ylabel="Temp (°C)")
         self.canvas_motor.plot(self.motor_rpm_data[-max_len:], ylabel="Motor DC (RPM)")
         self.canvas_grosor.plot(self.grosor_data[-max_len:], ylabel="Grosor (mm)")
@@ -749,12 +754,12 @@ class ControlGUI(QWidget):
             with open(path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([
-                    'Timestamp', 'Temperatura_Hotend', 'RPM_Motor_DC', 'Grosor_Filamento',
+                    'Time_s', 'Temperatura_Hotend', 'RPM_Motor_DC', 'Grosor_Filamento',
                     'Estado_Motor_DC', 'Estado_Fan', 'Estado_Extrusor', 'Estado_Heater'
                 ])
                 for i in range(max_rows):
                     writer.writerow([
-                        i,
+                        round(i * 0.1, 1),
                         self.temp_data[i] if i < len(self.temp_data) else '',
                         self.motor_rpm_data[i] if i < len(self.motor_rpm_data) else '',
                         self.grosor_data[i] if i < len(self.grosor_data) else '',
@@ -768,7 +773,7 @@ class ControlGUI(QWidget):
             print(f"Error al guardar CSV: {e}")
 
     def closeEvent(self, event):
-        if hasattr(self, 'cap') and self.cap.isOpened():
+        if hasattr(self, 'cap') and self.cap is not None and self.cap.isOpened():
             self.cap.release()
         cv2.destroyAllWindows()
         event.accept()

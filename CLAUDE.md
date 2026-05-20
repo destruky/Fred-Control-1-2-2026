@@ -4,7 +4,7 @@ Motor DC (PWM→RPM) + Hotend (PWM→°C). Dos equipos paralelos — **nunca mez
 
 ## Hardware
 Arduino Mega 2560 + RAMPS 1.4. Ts=0.1s, 115200 baud.
-Motor: encoder 4704p/rev, zona muerta PWM<30, max ~52 RPM, τ≈0.2s.
+Motor: encoder 4704p/rev, zona muerta PWM<120 (con mecanismo extrusor), PWM max=255, max ~52 RPM, τ≈0.2s. PRBS niveles: 120/155/190/225/255.
 Hotend: Steinhart-Hart (A=1.1384e-3, B=2.3245e-4, C=9.489e-8, Raux=460Ω), shutdown >255°C, τ≈100s.
 Pinout: `pinMotor=9`, `pinHotend=10`, `pinFan=8`, `termPin=A13`, encoder `C1=18/C2=19`
 
@@ -17,9 +17,9 @@ Pinout: `pinMotor=9`, `pinHotend=10`, `pinFan=8`, `termPin=A13`, encoder `C1=18/
 **Clásico/** `tfest()` → G(s) → Bayesian Optimization propone Kp/Ki/Kd (minimiza ITAE) → validar en Simulink (PID block) → implementar en FrED. PID Tuner se corre **una sola vez como baseline** para comparar contra BO vía ITAE. Multi-exp: `merge()` en MATLAB, nunca concatenar. PROHIBIDO: `ssest`, `n4sid`, espacio de estados, LQR.
 **Moderno/** NN PyTorch → Jacobiano → A,B,C,D → LQR en MATLAB → validar en Simulink (State-Space block + realimentación K). PROHIBIDO: `tfest()`, Transfer Fcn block, PID Tuner.
 
-## Ganancias PID — fuente de verdad: `MAIN_F.ino`
-⚠️ Reporte ExpoIngeniería tiene valores **invertidos** — no usar para ganancias.
-Motor: Kp=25, Ki=2.5, Kd=1.5 | Hotend: Kp=1.8, Ki=0.9, Kd=0.3
+## Ganancias PID — sintonización manual año pasado
+⚠️ `MAIN_F.ino` tiene las variables `Kp_M`/`Kp_H` con valores **intercambiados** vs la asignación física real — verificado con usuario el 2026-05-13. Mandar siempre `PIDM:` y `PIDH:` por serial desde la GUI con los valores correctos antes de cualquier prueba.
+Motor DC (mecánico): Kp=1.8, Ki=0.9, Kd=0.3 | Hotend (térmico): Kp=25, Ki=2.5, Kd=1.5
 
 ## Red Neuronal Motor (`Moderno/NN/Motor/motor_sysid_nn.py`)
 Feedforward 12→32→32→1, W=5. Input: `[pwm(k-5..k), rpm(k-5..k)]` → `rpm(k+1)`.
@@ -45,7 +45,7 @@ Salida: `state_space_hotend.mat` en `Moderno/NN/Hotend/` — 201 estados (compan
 
 ## Moderno — estructura de carpetas (para no confundir)
 `Moderno/MAIN_F/` = sketch PID (base de referencia, no tocar). `Moderno/LQRMAIN_F/` = sketch LQR activo — este es el que se flashea.
-`Moderno/Datos CSV/` = copia de referencia manual, **no la usan los scripts**. Los scripts cargan de `NN/Motor/` y `NN/Hotend/` directamente.
+Los scripts cargan los CSVs de entrenamiento de `Moderno/NN/Motor/` y `Moderno/NN/Hotend/` directamente. La carpeta `Moderno/Datos CSV/` (copia de referencia manual obsoleta) se eliminó el 2026-05-19.
 **Flujo hotend completo:** (1) `NN/Hotend/fred_lqr_hotend_design.m` — diseño LQR, obtiene K y Nbar. (2) Abrir `Hotendcontrol.slx` → genera `lqr_valores_hotend.mat` (~6 est. vía minreal). (3) `MATLAB/Hotend/fred_lqr_hotend.m` — carga ese .mat y prepara workspace para Simulink.
 `design_motor_lqr.m` apunta a `NN/Motor/state_space_motor.mat` — no crear copias locales del .mat.
 

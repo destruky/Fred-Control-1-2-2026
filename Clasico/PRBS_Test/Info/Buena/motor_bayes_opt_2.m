@@ -10,9 +10,9 @@ Tsim = 25;   % Tiempo de simulación (motor rápido: 20-30 s)
 
 %% Variables a optimizar
 vars = [
-    optimizableVariable('Kp', [0.5, 50])
+    optimizableVariable('Kp', [0.1, 10])
     optimizableVariable('Ki', [0.01, 10])
-    optimizableVariable('Kd', [0.0, 5])
+    optimizableVariable('Kd', [0.0, 10])
 ];
 
 %% Función objetivo (ITAE)

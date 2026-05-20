@@ -68,8 +68,9 @@ void loop() {
     float dt = (now - prevTime) / 1000.0;
     prevTime = now;
 
-    float temp_actual = thermistor(analogRead(termPin));
-    computeRpm(); 
+    int raw_adc = analogRead(termPin);
+    float temp_actual = thermistor(raw_adc);
+    computeRpm();
 
     // --- PID HOTEND ---
     if (digits.length() >= 4 && digits[3] == '1') {
@@ -99,6 +100,10 @@ void loop() {
       analogWrite(pinMotor, 0);
       moto_m = 0;
     }
+    // Telemetría 10 Hz — necesaria para capturar transitorio del motor (τ≈0.2s)
+    Serial.print("ADC:"); Serial.println(raw_adc);
+    Serial.print("Temp:"); Serial.println(temp_actual);
+    Serial.print("Motor DC RPM:"); Serial.println(N);
   }
 
   // --- FAN ---
@@ -131,8 +136,6 @@ void loop() {
   unsigned long currentMillis = millis();
   if (currentMillis - lastStatusUpdate >= 1000) {
     lastStatusUpdate = currentMillis;
-    Serial.print("Temp:"); Serial.println(thermistor(analogRead(termPin)));
-    Serial.print("Motor DC RPM:"); Serial.println(N);
     Serial.println("--- Estado de componentes ---");
     Serial.print("Fan:        "); Serial.println(fan_m ? "Encendido" : "Apagado");
     Serial.print("Heater:     "); Serial.println(heater_m ? "Encendido" : "Apagado");
@@ -183,6 +186,7 @@ void processInput(String command) {
       Kp_H = values.substring(0, firstComma).toFloat();
       Ki_H = values.substring(firstComma + 1, secondComma).toFloat();
       Kd_H = values.substring(secondComma + 1).toFloat();
+      integral_H = 0;
 
       Serial.println("Ganancias del PID del Hotend atualizados:");
       Serial.print("Kp: "); Serial.print(Kp_H, 4);
@@ -200,6 +204,7 @@ void processInput(String command) {
       Kp_M = values.substring(0, firstComma).toFloat();
       Ki_M = values.substring(firstComma + 1, secondComma).toFloat();
       Kd_M = values.substring(secondComma + 1).toFloat();
+      integral_M = 0;
 
       Serial.println("Ganancias del PID del Motor DC atualizados:");
       Serial.print("Kp: "); Serial.print(Kp_M, 4);

@@ -21,6 +21,9 @@ double K_LQR_M[N_ESTADOS_M] = {
     -0.2623,  0.0915, -0.5752, -0.1625,  0.2766,  0.0802
 };
 double Nbar_M = 8.390320;
+double Ki_LQR_M = 0.0;                    // ganancia integral del LQI (a actualizar con valor de MATLAB)
+double integral_error_M = 0.0;            // acumulador del error
+const double INT_WINDUP_LIMIT_M = 100.0;  // límite anti-windup
 
 // Memoria 11 lecturas de RPM (companion form, W=5 → 2W+1=11)
 double rpm_history[N_ESTADOS_M] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -50,7 +53,7 @@ void encoder(void){
   if(ant==12 && act==4) n--;   
 }
 
-// CONTROL LQR - MOTOR DC
+// CONTROL LQR - MOTOR DC (LQI: u = Nbar*r - K*x - Ki*∫error)
 double LQRMotor(double rpm_actual, double setpoint) {
     // 1. Desplazar el historial
     for (int i = N_ESTADOS_M - 1; i > 0; i--) {
@@ -58,20 +61,37 @@ double LQRMotor(double rpm_actual, double setpoint) {
     }
     rpm_history[0] = rpm_actual;
 
-    // 2. Ley de control: u = Nbar*r - K*x
+    // 2. Realimentación de estados
     double u_ff = Nbar_M * setpoint;
     double u_fb = 0;
     for (int i = 0; i < N_ESTADOS_M; i++) {
         u_fb += K_LQR_M[i] * rpm_history[i];
     }
 
-    double control_u = u_ff - u_fb;
+    // 3. Acumular integral del error (solo si no saturado — anti-windup condicional)
+    double error = setpoint - rpm_actual;
+    double u_pre = u_ff - u_fb - Ki_LQR_M * integral_error_M;
 
-    // Si el objetivo es 0, forzamos apagado
-    if (setpoint <= 0) return 0;
+    // Anti-windup: solo integrar si la salida no está saturada en la dirección del error
+    bool saturated_high = (u_pre >= 255) && (error > 0);
+    bool saturated_low  = (u_pre <= 30)  && (error < 0);
+    if (!saturated_high && !saturated_low) {
+        integral_error_M += error * 0.1;  // Ts = 0.1s
+        // Clamp adicional
+        if (integral_error_M >  INT_WINDUP_LIMIT_M) integral_error_M =  INT_WINDUP_LIMIT_M;
+        if (integral_error_M < -INT_WINDUP_LIMIT_M) integral_error_M = -INT_WINDUP_LIMIT_M;
+    }
 
-    // 3. Saturación física (Min PWM 10, Max 255)
-    return constrain((int)control_u, 10, 255);
+    double control_u = u_ff - u_fb - Ki_LQR_M * integral_error_M;
+
+    // 4. Setpoint = 0 → apagar
+    if (setpoint <= 0) {
+        integral_error_M = 0.0;  // reset integrador
+        return 0;
+    }
+
+    // 5. Saturación con ZONA MUERTA correcta (PWM mín 30, máx 255)
+    return constrain((int)control_u, 30, 255);
 }
 
 #endif
