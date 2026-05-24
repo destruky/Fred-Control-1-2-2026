@@ -16,12 +16,9 @@ const int R_encoder = 4704;
 // Usa las matrices que te salgan después de correr el script .py del motor
 // =========================================================
 #define N_ESTADOS_M 11
-double K_LQR_M[N_ESTADOS_M] = {
-     9.0774, -0.5882, -0.9874, -0.8549,  0.3925,
-    -0.2623,  0.0915, -0.5752, -0.1625,  0.2766,  0.0802
-};
-double Nbar_M = 8.390320;
-double Ki_LQR_M = 0.0;                    // ganancia integral del LQI (a actualizar con valor de MATLAB)
+double K_LQR_M[N_ESTADOS_M] = {11.849048, -0.613287, -1.015880, -0.915162, 0.420142, -0.276880, 0.104980, -0.599587, -0.176391, 0.290174, 0.084691};
+double Nbar_M = 11.045743;                     // ganancia de referencia del LQI (a actualizar con valor de MATLAB)
+double Ki_LQR_M = -2.268080;                    // ganancia integral del LQI (a actualizar con valor de MATLAB)
 double integral_error_M = 0.0;            // acumulador del error
 const double INT_WINDUP_LIMIT_M = 100.0;  // límite anti-windup
 

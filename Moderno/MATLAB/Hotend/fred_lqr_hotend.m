@@ -36,9 +36,38 @@ R = 1;
 % 6. Calcular ganancia de Pre-compensación (Nbar) usando tu función
 Nbar_hotend = rscale_discrete(A_hotend, B_hotend, C_hotend, D_hotend, K_hotend);
 
-disp('-----------------------------------------');
+% --- NUEVA SECCIÓN AGREGADA PARA LQI (SERVO-LQR) ---
+nr = size(A_hotend, 1);
+A_aug = [A_hotend, zeros(nr,1); -C_hotend, 1];
+B_aug = [B_hotend; 0];
+Q_aug = blkdiag(C_hotend'*C_hotend*100, 5); % Peso integrador = 5
+[K_aug, ~, ~] = dlqr(A_aug, B_aug, Q_aug, R);
+K_LQI = K_aug(1:nr);
+Ki_LQI = K_aug(nr+1);
+
+fprintf('\n--- COPIAR A LQR_HOTEND.h ---\n');
+fprintf('double K_LQR_H[%d] = {%s};\n', nr, strjoin(arrayfun(@(x) sprintf('%.6f', x), K_LQI, 'UniformOutput', false), ', '));
+fprintf('double Ki_LQR_H = %.6f;\n', Ki_LQI);
+fprintf('double Nbar_H = %.6f;\n', Nbar_hotend);
+fprintf('--------------------------------\n');
+
 disp('¡Variables reducidas del Hotend listas para Simulink!');
 disp('Ya puedes darle "Run" a tu modelo .slx');
+
+% --- AGREGADO: SIMULACIÓN Y GRÁFICA DE VALIDACIÓN ---
+sys_cl = ss(A_hotend - B_hotend*K_LQI, B_hotend*Nbar_hotend, C_hotend, D_hotend, Ts_val);
+t_sim = (0:Ts_val:800)'; 
+setpoint = 190 * ones(size(t_sim));
+[y_sim, ~] = lsim(sys_cl, setpoint, t_sim);
+
+figure('Name', 'LQR Hotend — FrED', 'Color', 'w');
+plot(t_sim, y_sim, 'r', 'LineWidth', 2); hold on;
+yline(190, 'k--', 'LineWidth', 1.5);
+title('Comportamiento esperado: Respuesta Hotend (Servo-LQI)');
+xlabel('Tiempo (s)');
+ylabel('Temperatura (°C)');
+legend('LQR simulado', 'Ref 190 °C', 'Location', 'southeast');
+grid on; set(gca, 'FontSize', 12);
 
 % =========================================================================
 % FUNCIÓN: rscale_discrete (Debe ir al final del script)
@@ -47,13 +76,11 @@ function Nbar = rscale_discrete(A, B, C, D, K)
     n   = size(A, 1);
     M   = [A - eye(n), B; C, D];
     rhs = [zeros(n, 1); 1];
-
     if rank(M) < size(M, 1)
         N = pinv(M) * rhs;
     else
         N = M \ rhs;
     end
-
     Nx   = N(1:n);
     Nu   = N(n+1);
     Nbar = Nu + K * Nx;
